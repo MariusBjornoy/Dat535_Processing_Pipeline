@@ -1,3 +1,5 @@
+#impporting the libraries
+
 from delta import *
 from delta.tables import *
 import pyspark
@@ -22,6 +24,7 @@ from sparknlp.pretrained import PretrainedPipeline
 from sparknlp.base import *
 from sparknlp.annotator import *
 
+#Creates the cuilder and physical execution context
 builder = pyspark.sql.SparkSession.builder.appName("SteamReaderTestFile") \
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
     .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
@@ -35,9 +38,10 @@ builder = pyspark.sql.SparkSession.builder.appName("SteamReaderTestFile") \
 spark = configure_spark_with_delta_pip(builder).getOrCreate()
 
 hlist = "/ProjectDat535/steam_reviews.txt"
-#Abriviated
+#Abriviated version of the dataset
 #hlist = "/ProjectDat535/abrieiatedSteamreview.txt"
 
+#defining the schema
 df = (
     spark.read.text(hlist)
     .selectExpr("split(value, ',') as columns")
@@ -94,6 +98,7 @@ df = (
     )
 )
 
+#Complete version of the dataset, with all the columns
 # df = (
 #     spark.read.text(hlist)
 #     .selectExpr("split(value, ',') as columns")
@@ -151,10 +156,10 @@ df = (
 # )
 #df.show()
 
-
+#temporarily creating a view to be able to use SQL
 df.createOrReplaceTempView("final_temp_view")
 
-
+#creating a new dataframe with the percentage of likes and dislikes
 recommended_counts = spark.sql("""
     SELECT app_id, 
            SUM(CASE WHEN recommended = TRUE THEN 1 ELSE 0 END) AS recommended_count,
@@ -164,17 +169,17 @@ recommended_counts = spark.sql("""
 """)
 #recommended_counts.show(10)
 
+#creating a new column with the percentage of recommended
 percentage_df = recommended_counts.withColumn(
     "percentage_liked",
     expr("recommended_count / (recommended_count + not_recommended_count) * 100")
 )
 
-#percentage_df.cache()
 percentage_df.show()
 
 df = df.join(percentage_df, on='app_id', how='left')
 
-#df.persist()
+df.persist()
 
 sparknlp.start()
 df = df.dropna().withColumnRenamed("review", "text")
@@ -185,21 +190,14 @@ df = df.withColumn("predicted_sentiment", col("sentiment.result").getItem(0))
 df = df.drop(*["document", "sentence", "token", "checked", "sentiment"])
 df.show()
  
-#df.unpersist()
+df.unpersist()
 
-#final_delta_table = "/steamReaderWithPercentages"
-
-#Dette blir den nye verdien 
 final_df_delta = df.write.format("delta")
 
-
-
+#Upsert
 if DeltaTable.isDeltaTable(spark, '/fullsteamReaderWithPercentagefilter'):
     print("Deltatable found")
     DeltaSteamDfWithPercentage = DeltaTable.forPath(spark, '/fullsteamReaderWithPercentagefilter')
-    #dataFrameUpdates = DeltaSteamDfWithPercentageUpdate.toDF()
-    #final_df_delta.alias('updates')
-
     DeltaSteamDfWithPercentage.alias('old') \
     .merge(
         df.alias('updates'),
@@ -241,6 +239,6 @@ else:
     final_delta_table = DeltaTable.forPath(spark, '/fullsteamReaderWithPercentagefilter')
 
 # Save the DataFrame as a CSV file
-#final_df.write.csv("SteamReviews.csv", header=True, mode="overwrite")
+final_df.write.csv("SteamReviews.csv", header=True, mode="overwrite")
 
 spark.stop()
