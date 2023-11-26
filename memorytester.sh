@@ -17,8 +17,7 @@ OUTPUT_FILE="execution_times_${TIMESTAMP}.txt"
 # Run the PySpark script multiple times with different memory values
 for ((i=1; i<=$NUM_RUNS; i++)); do
   # Choose the memory value for this run
-  MEMORY="${MEMORY_VALUES[i % ${#MEMORY_VALUES[@]}]}" # Cycling through the array
-
+  MEMORY="${MEMORY_VALUES[(i-1) % ${#MEMORY_VALUES[@]}]}"
   echo "Run $i with $MEMORY of memory:"
 
   # Record start time
