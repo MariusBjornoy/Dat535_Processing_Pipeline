@@ -32,8 +32,8 @@ builder = pyspark.sql.SparkSession.builder.appName("SteamReaderTestFile") \
     .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")\
     .config("spark.kryoserializer.buffer.max", "200M")\
     .config("spark.jars.packages", "com.johnsnowlabs.nlp:spark-nlp_5.1.4:3.5.0")\
-    .config("spark.executor.cores", 4) 
-#    .config("spark.executor.memory", "1g") 
+    .config("spark.executor.cores", 4) \
+    .config("spark.executor.memory", "2g") 
 
 spark = configure_spark_with_delta_pip(builder).getOrCreate()
 
@@ -181,6 +181,7 @@ df = df.join(percentage_df, on='app_id', how='left')
 
 df.persist()
 
+#creating a new column with the sentiment of the review
 sparknlp.start()
 df = df.dropna().withColumnRenamed("review", "text")
 sentiment = PretrainedPipeline("analyze_sentiment", lang="en")
