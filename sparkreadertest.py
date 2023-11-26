@@ -2,23 +2,16 @@ from delta import *
 from delta.tables import *
 import pyspark
 from pyspark.sql.types import StructType, StructField, IntegerType, StringType, LongType, DoubleType, BooleanType
-from pyspark.sql.functions import col, expr, udf
-from pyspark.ml.feature import HashingTF, IDF, Tokenizer, StringIndexer
-from pyspark.ml.classification import NaiveBayes
-from pyspark.ml import Pipeline
-from pyspark.sql.types import StringType
-from pyspark.ml.feature import Tokenizer
-from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+from pyspark.sql.functions import col, expr, broadcast
 import findspark
-import re 
-from nltk.corpus import stopwords
 findspark.init()
 
 builder = pyspark.sql.SparkSession.builder.appName("SteamReader") \
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
     .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
     .config("spark.executor.instances", 3) \
-    .config("spark.executor.cores", 4) 
+    .config("spark.executor.cores", 4) \
+    .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
 #    .config("spark.executor.memory", "1g") 
 
 
@@ -85,56 +78,8 @@ df = (
 )
 #df.show()
 
-stopwords_df = spark.read.text("/ProjectDat535/stopwords.txt")
-stopwords_list = stopwords_df.rdd.map(lambda row: row[0].strip()).collect()
-
-
-
-# Read stopwords from file into a Spark DataFrame
-stopwords_df = spark.read.text("/ProjectDat535/stopwords.txt")
-stopwords_list = stopwords_df.rdd.map(lambda row: row[0].strip()).collect()
-
-# Define the cleaning function
-def clean_text(text):
-    text = text.lower()  # Lowercase text
-    text = re.sub(r'(http\S+)|(www\S+)|(\S+.com)', ' ', text)  # Remove URLs
-    text = re.sub(r'[^\w\s\u4E00-\u9FFF]', '', text)
-
-    text = ' '.join([word for word in text.split() if word not in stopwords_list])
-
 
 df.createOrReplaceTempView("final_temp_view")
-
-
-df_ml, _ = df.randomSplit([0.1, 0.9], seed=123)
-
-
-clean_text_udf = udf(lambda text: clean_text(text), StringType())
-df_ml = df_ml.withColumn("review", clean_text_udf(df["review"]))
-
-# ml_df = df.select("review", "recommended")
-indexer = StringIndexer(inputCol="recommended", outputCol="label")
-df_ml = indexer.fit(df_ml).transform(df_ml)
-
-false_count = df_ml.filter(df_ml["recommended"] == "False").count()
-
-# Display the count
-print("Number of times 'recommended' is False: {}".format(false_count))
-
-tokenizer = Tokenizer(inputCol="review", outputCol="words")
-hashingTF = HashingTF(inputCol="words", outputCol="rawFeatures")
-idf = IDF(inputCol="rawFeatures", outputCol="features")
-nb = NaiveBayes(labelCol="label", featuresCol="features", predictionCol="prediction", smoothing=1.0)
-# pipeline = Pipeline(stages=[tokenizer, hashingTF, idf, nb])
-pipeline = Pipeline(stages=[tokenizer, hashingTF, idf, nb])
-
-train_data, test_data = df_ml.randomSplit([0.8, 0.2], seed=123)
-model = pipeline.fit(train_data)
-predictions = model.transform(test_data)
-evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="accuracy")
-accuracy = evaluator.evaluate(predictions)
-print("Accuracy: {:.2%}".format(accuracy))
-
 
 #result = spark.sql("SELECT app_id, COLLECT_LIST(recommended) AS recommended_values FROM temp_view_name GROUP BY app_id")
 #result.show()
@@ -153,16 +98,10 @@ percentage_df = recommended_counts.withColumn(
     expr("recommended_count / (recommended_count + not_recommended_count) * 100")
 )
 
-#percentage_df.cache
+#percentage_df.cache()
 percentage_df.show()
 
 final_df_with_percentage = df.join(percentage_df, on='app_id', how='left')
-
-
-
-
-
-
 
 
 
